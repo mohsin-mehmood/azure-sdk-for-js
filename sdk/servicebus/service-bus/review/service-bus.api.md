@@ -15,11 +15,19 @@ import { PageSettings } from '@azure/core-paging';
 import { PipelineOptions } from '@azure/core-http';
 import { RetryOptions } from '@azure/core-amqp';
 import { ServiceClient } from '@azure/core-http';
+import { Span } from '@opentelemetry/api';
+import { SpanContext } from '@opentelemetry/api';
 import { TokenCredential } from '@azure/core-amqp';
 import { TokenType } from '@azure/core-amqp';
 import { UserAgentOptions } from '@azure/core-http';
 import { WebSocketImpl } from 'rhea-promise';
 import { WebSocketOptions } from '@azure/core-amqp';
+
+// @public
+export interface AcceptSessionOptions<ReceiveModeT extends ReceiveMode> extends OperationOptionsBase {
+    maxAutoRenewLockDurationInMs?: number;
+    receiveMode?: ReceiveModeT;
+}
 
 // @public
 export interface AmqpAnnotatedMessage {
@@ -83,7 +91,7 @@ export interface CorrelationRuleFilter {
     label?: string;
     messageId?: string;
     properties?: {
-        [key: string]: string | number | boolean;
+        [key: string]: string | number | boolean | Date;
     };
     replyTo?: string;
     replyToSessionId?: string;
@@ -120,15 +128,9 @@ export interface CreateQueueOptions extends OperationOptions {
 
 // @public
 export interface CreateReceiverOptions<ReceiveModeT extends ReceiveMode> {
+    maxAutoLockRenewalDurationInMs?: number;
     receiveMode?: ReceiveModeT;
     subQueue?: SubQueue;
-}
-
-// @public
-export interface CreateSessionReceiverOptions<ReceiveModeT extends ReceiveMode> extends OperationOptionsBase {
-    maxAutoRenewLockDurationInMs?: number;
-    receiveMode?: ReceiveModeT;
-    sessionId?: string;
 }
 
 // @public
@@ -187,17 +189,6 @@ export type EntityStatus = "Active" | "Creating" | "Deleting" | "ReceiveDisabled
 
 // @public
 export interface GetMessageIteratorOptions extends OperationOptionsBase {
-}
-
-// @public
-export interface MessageHandlerOptions extends MessageHandlerOptionsBase {
-    maxAutoRenewLockDurationInMs?: number;
-}
-
-// @public
-export interface MessageHandlerOptionsBase extends OperationOptionsBase {
-    autoComplete?: boolean;
-    maxConcurrentCalls?: number;
 }
 
 // @public
@@ -346,16 +337,20 @@ export class ServiceBusAdministrationClient extends ServiceClient {
 export class ServiceBusClient {
     constructor(connectionString: string, options?: ServiceBusClientOptions);
     constructor(fullyQualifiedNamespace: string, credential: TokenCredential, options?: ServiceBusClientOptions);
+    acceptNextSession(queueName: string, options?: AcceptSessionOptions<"peekLock">): Promise<ServiceBusSessionReceiver<ServiceBusReceivedMessageWithLock>>;
+    acceptNextSession(queueName: string, options: AcceptSessionOptions<"receiveAndDelete">): Promise<ServiceBusSessionReceiver<ServiceBusReceivedMessage>>;
+    acceptNextSession(topicName: string, subscriptionName: string, options?: AcceptSessionOptions<"peekLock">): Promise<ServiceBusSessionReceiver<ServiceBusReceivedMessageWithLock>>;
+    acceptNextSession(topicName: string, subscriptionName: string, options: AcceptSessionOptions<"receiveAndDelete">): Promise<ServiceBusSessionReceiver<ServiceBusReceivedMessage>>;
+    acceptSession(queueName: string, sessionId: string, options?: AcceptSessionOptions<"peekLock">): Promise<ServiceBusSessionReceiver<ServiceBusReceivedMessageWithLock>>;
+    acceptSession(queueName: string, sessionId: string, options: AcceptSessionOptions<"receiveAndDelete">): Promise<ServiceBusSessionReceiver<ServiceBusReceivedMessage>>;
+    acceptSession(topicName: string, subscriptionName: string, sessionId: string, options?: AcceptSessionOptions<"peekLock">): Promise<ServiceBusSessionReceiver<ServiceBusReceivedMessageWithLock>>;
+    acceptSession(topicName: string, subscriptionName: string, sessionId: string, options: AcceptSessionOptions<"receiveAndDelete">): Promise<ServiceBusSessionReceiver<ServiceBusReceivedMessage>>;
     close(): Promise<void>;
     createReceiver(queueName: string, options?: CreateReceiverOptions<"peekLock">): ServiceBusReceiver<ServiceBusReceivedMessageWithLock>;
     createReceiver(queueName: string, options: CreateReceiverOptions<"receiveAndDelete">): ServiceBusReceiver<ServiceBusReceivedMessage>;
     createReceiver(topicName: string, subscriptionName: string, options?: CreateReceiverOptions<"peekLock">): ServiceBusReceiver<ServiceBusReceivedMessageWithLock>;
     createReceiver(topicName: string, subscriptionName: string, options: CreateReceiverOptions<"receiveAndDelete">): ServiceBusReceiver<ServiceBusReceivedMessage>;
     createSender(queueOrTopicName: string): ServiceBusSender;
-    createSessionReceiver(queueName: string, options?: CreateSessionReceiverOptions<"peekLock">): Promise<ServiceBusSessionReceiver<ServiceBusReceivedMessageWithLock>>;
-    createSessionReceiver(queueName: string, options: CreateSessionReceiverOptions<"receiveAndDelete">): Promise<ServiceBusSessionReceiver<ServiceBusReceivedMessage>>;
-    createSessionReceiver(topicName: string, subscriptionName: string, options?: CreateSessionReceiverOptions<"peekLock">): Promise<ServiceBusSessionReceiver<ServiceBusReceivedMessageWithLock>>;
-    createSessionReceiver(topicName: string, subscriptionName: string, options: CreateSessionReceiverOptions<"receiveAndDelete">): Promise<ServiceBusSessionReceiver<ServiceBusReceivedMessage>>;
     fullyQualifiedNamespace: string;
 }
 
@@ -392,8 +387,10 @@ export interface ServiceBusMessageBatch {
     // @internal
     _generateMessage(): Buffer;
     readonly maxSizeInBytes: number;
+    // @internal
+    readonly _messageSpanContexts: SpanContext[];
     readonly sizeInBytes: number;
-    tryAdd(message: ServiceBusMessage): boolean;
+    tryAdd(message: ServiceBusMessage, options?: TryAddOptions): boolean;
 }
 
 // @public
@@ -460,13 +457,9 @@ export interface ServiceBusSessionReceiver<ReceivedMessageT extends ServiceBusRe
     readonly sessionId: string;
     readonly sessionLockedUntilUtc: Date;
     setSessionState(state: any, options?: OperationOptionsBase): Promise<void>;
-    subscribe(handlers: MessageHandlers<ReceivedMessageT>, options?: SessionSubscribeOptions): {
+    subscribe(handlers: MessageHandlers<ReceivedMessageT>, options?: SubscribeOptions): {
         close(): Promise<void>;
     };
-}
-
-// @public
-export interface SessionSubscribeOptions extends MessageHandlerOptionsBase {
 }
 
 // @public
@@ -489,7 +482,9 @@ export interface SqlRuleFilter {
 export type SubQueue = "deadLetter" | "transferDeadLetter";
 
 // @public
-export interface SubscribeOptions extends MessageHandlerOptions {
+export interface SubscribeOptions extends OperationOptionsBase {
+    autoComplete?: boolean;
+    maxConcurrentCalls?: number;
 }
 
 // @public
@@ -572,6 +567,11 @@ export interface TopicRuntimeProperties {
 
 // @public
 export interface TopicRuntimePropertiesResponse extends TopicRuntimeProperties, Response {
+}
+
+// @public
+export interface TryAddOptions {
+    parentSpan?: Span | SpanContext | null;
 }
 
 export { WebSocketImpl }
