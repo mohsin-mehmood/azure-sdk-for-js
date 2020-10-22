@@ -100,7 +100,7 @@ export interface CorrelationRuleFilter {
 }
 
 // @public
-export interface CreateBatchOptions extends OperationOptionsBase {
+export interface CreateMessageBatchOptions extends OperationOptionsBase {
     maxSizeInBytes?: number;
 }
 
@@ -193,7 +193,7 @@ export interface GetMessageIteratorOptions extends OperationOptionsBase {
 
 // @public
 export interface MessageHandlers<ReceivedMessageT> {
-    processError(err: Error): Promise<void>;
+    processError(args: ProcessErrorArgs): Promise<void>;
     processMessage(message: ReceivedMessageT): Promise<void>;
 }
 
@@ -219,8 +219,19 @@ export { OperationOptions }
 export type OperationOptionsBase = Pick<OperationOptions, "abortSignal" | "tracingOptions">;
 
 // @public
+export function parseServiceBusConnectionString(connectionString: string): ServiceBusConnectionStringProperties;
+
+// @public
 export interface PeekMessagesOptions extends OperationOptionsBase {
     fromSequenceNumber?: Long;
+}
+
+// @public
+export interface ProcessErrorArgs {
+    entityPath: string;
+    error: Error | MessagingError;
+    errorSource: "abandon" | "complete" | "processMessageCallback" | "receive" | "renewLock";
+    fullyQualifiedNamespace: string;
 }
 
 // @public
@@ -362,6 +373,16 @@ export interface ServiceBusClientOptions {
 }
 
 // @public
+export interface ServiceBusConnectionStringProperties {
+    endpoint: string;
+    entityPath?: string;
+    fullyQualifiedNamespace: string;
+    sharedAccessKey?: string;
+    sharedAccessKeyName?: string;
+    sharedAccessSignature?: string;
+}
+
+// @public
 export interface ServiceBusMessage {
     applicationProperties?: {
         [key: string]: number | boolean | string | Date;
@@ -391,7 +412,7 @@ export interface ServiceBusMessageBatch {
     // @internal
     readonly _messageSpanContexts: SpanContext[];
     readonly sizeInBytes: number;
-    tryAdd(message: ServiceBusMessage, options?: TryAddOptions): boolean;
+    tryAddMessage(message: ServiceBusMessage, options?: TryAddOptions): boolean;
 }
 
 // @public
@@ -443,7 +464,7 @@ export interface ServiceBusReceiver<ReceivedMessageT> {
 export interface ServiceBusSender {
     cancelScheduledMessages(sequenceNumbers: Long | Long[], options?: OperationOptionsBase): Promise<void>;
     close(): Promise<void>;
-    createBatch(options?: CreateBatchOptions): Promise<ServiceBusMessageBatch>;
+    createMessageBatch(options?: CreateMessageBatchOptions): Promise<ServiceBusMessageBatch>;
     entityPath: string;
     isClosed: boolean;
     open(options?: OperationOptionsBase): Promise<void>;
