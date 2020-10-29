@@ -6,6 +6,8 @@
 
 export {
   delay,
+  isMessagingError,
+  MessageErrorCodes,
   MessagingError,
   RetryOptions,
   TokenCredential,
@@ -18,8 +20,8 @@ export { ServiceBusClientOptions } from "./constructorHelpers";
 export { CorrelationRuleFilter } from "./core/managementClient";
 export {
   CreateMessageBatchOptions,
-  CreateReceiverOptions,
-  AcceptSessionOptions,
+  ServiceBusReceiverOptions,
+  ServiceBusSessionReceiverOptions,
   GetMessageIteratorOptions,
   MessageHandlers,
   ProcessErrorArgs,
@@ -52,16 +54,8 @@ export {
 } from "./serializers/topicResourceSerializer";
 export {
   EntitiesResponse,
-  NamespacePropertiesResponse,
-  QueueResponse,
-  QueueRuntimePropertiesResponse,
-  Response,
-  RuleResponse,
-  ServiceBusAdministrationClient,
-  SubscriptionResponse,
-  SubscriptionRuntimePropertiesResponse,
-  TopicResponse,
-  TopicRuntimePropertiesResponse
+  WithResponse,
+  ServiceBusAdministrationClient
 } from "./serviceBusAtomManagementClient";
 export { ServiceBusClient } from "./serviceBusClient";
 export {
@@ -70,7 +64,6 @@ export {
   AmqpMessageProperties,
   DeadLetterOptions,
   ServiceBusReceivedMessage,
-  ServiceBusReceivedMessageWithLock,
   ServiceBusMessage
 } from "./serviceBusMessage";
 export { ServiceBusMessageBatch } from "./serviceBusMessageBatch";
